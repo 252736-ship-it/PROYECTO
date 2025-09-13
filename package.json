@@ -1,0 +1,11 @@
+{
+  "name": "juego-threejs",
+  "version": "1.0.0",
+  "description": "Juego de mesa 3D",
+  "scripts": {
+    "start": "npx http-server . -o"
+  },
+  "dependencies": {
+    "http-server": "^14.1.1"
+  }
+}
