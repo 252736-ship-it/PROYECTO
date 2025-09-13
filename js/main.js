@@ -64,7 +64,7 @@ class Game {
         // Agregar luces
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         this.scene.add(ambientLight);
-        
+
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
         directionalLight.position.set(5, 8, 5);
         directionalLight.castShadow = true;
@@ -72,7 +72,7 @@ class Game {
 
         // Habilitar sombras
         this.renderer.shadowMap.enabled = true;
-        
+
         // Crear el tablero y elementos del juego
         this.createBoard();
         this.createTiles();
@@ -99,7 +99,7 @@ class Game {
             roughness: 0.2,
             metalness: 0.1
         });
-        
+
         // Agregar bisel suave a los bordes
         const edges = new THREE.EdgesGeometry(diceGeometry);
         const edgesMaterial = new THREE.LineBasicMaterial({ color: 0xe0e0e0 });
@@ -107,7 +107,7 @@ class Game {
 
         this.dice = new THREE.Mesh(diceGeometry, diceMaterial);
         this.dice.add(edgesLines);
-        
+
         // Posicionar el dado en una mejor ubicación
         this.dice.position.set(this.boardSize.width / 2 + 2, 1.5, -2);
         this.dice.rotation.set(0, 0, 0); // Comenzar en posición recta
@@ -123,36 +123,63 @@ class Game {
 
     addDiceDots() {
         const dotGeometry = new THREE.SphereGeometry(0.07, 32, 32);
-        const dotMaterial = new THREE.MeshStandardMaterial({ 
+        const dotMaterial = new THREE.MeshStandardMaterial({
             color: 0x000000,
             roughness: 0.3,
             metalness: 0.1
         });
 
-        // Configuración de los puntos para cada cara como un dado real
-        const dotPositions = {
-            1: [[0, 0, 0.51]],  // Centro
-            
-            2: [[0.25, 0.25, 0.51], [-0.25, -0.25, 0.51]],  // Diagonal
-            
-            3: [[-0.25, 0.25, 0.51], [0, 0, 0.51], [0.25, -0.25, 0.51]],  // Diagonal con centro
-            
-            4: [[-0.25, 0.25, 0.51], [-0.25, -0.25, 0.51],  // Cuatro esquinas
-                [0.25, 0.25, 0.51], [0.25, -0.25, 0.51]],
-            
-            5: [[-0.25, 0.25, 0.51], [-0.25, -0.25, 0.51],  // Cuatro esquinas + centro
-                [0, 0, 0.51],
-                [0.25, 0.25, 0.51], [0.25, -0.25, 0.51]],
-            
-            6: [[-0.25, 0.25, 0.51], [-0.25, 0, 0.51], [-0.25, -0.25, 0.51],  // Dos columnas de tres
-                [0.25, 0.25, 0.51], [0.25, 0, 0.51], [0.25, -0.25, 0.51]]
+        // posiciones 2D (x,y) relativas al centro de la cara (unidades en el plano de la cara)
+        const P = 0.25;
+        const dotSets2D = {
+            1: [[0, 0]], // centro
+            2: [[-P, -P], [P, P]],
+            3: [[-P, -P], [0, 0], [P, P]],
+            4: [[-P, -P], [-P, P], [P, -P], [P, P]],
+            5: [[-P, -P], [-P, P], [0, 0], [P, -P], [P, P]],
+            6: [[-P, -P], [-P, 0], [-P, P], [P, -P], [P, 0], [P, P]]
         };
 
-        // Crear los puntos para cada cara
-        Object.values(dotPositions).forEach(positions => {
-            positions.forEach(pos => {
+        // Mapeo de número -> cara del cubo (normal) y el offset en la dirección normal
+        // Usamos la convención para que las caras opuestas sumen 7:
+        // 1 <-> 6, 2 <-> 5, 3 <-> 4
+        // Asignamos:
+        // 1 -> +Y (cara superior), 6 -> -Y (inferior)
+        // 2 -> +Z (frente), 5 -> -Z (atrás)
+        // 3 -> +X (derecha), 4 -> -X (izquierda)
+        const faceMap = {
+            1: { axis: 'y', sign: 1, depth: 0.51 },
+            6: { axis: 'y', sign: -1, depth: 0.51 },
+            2: { axis: 'z', sign: 1, depth: 0.51 },
+            5: { axis: 'z', sign: -1, depth: 0.51 },
+            3: { axis: 'x', sign: 1, depth: 0.51 },
+            4: { axis: 'x', sign: -1, depth: 0.51 }
+        };
+
+        // Para cada cara, crear los dots en la posición correcta del cubo
+        Object.entries(dotSets2D).forEach(([numStr, positions2D]) => {
+            const num = parseInt(numStr);
+            const face = faceMap[num];
+
+            positions2D.forEach(([u, v]) => {
                 const dot = new THREE.Mesh(dotGeometry, dotMaterial);
-                dot.position.set(pos[0], pos[1], pos[2]);
+
+                // coordenadas locales (x,y,z) relativas al centro del cubo
+                let local = new THREE.Vector3(0, 0, 0);
+
+                // según el eje de la cara, interpretamos (u,v) como:
+                // si axis === 'x' => (depth*sign, v, u)  (cara perpendicular a X; plano Y-Z)
+                // si axis === 'y' => (u, depth*sign, v)  (cara perpendicular a Y; plano X-Z)
+                // si axis === 'z' => (u, v, depth*sign)  (cara perpendicular a Z; plano X-Y)
+                if (face.axis === 'x') {
+                    local.set(face.sign * face.depth, v, u);
+                } else if (face.axis === 'y') {
+                    local.set(u, face.sign * face.depth, v);
+                } else { // 'z'
+                    local.set(u, v, face.sign * face.depth);
+                }
+
+                dot.position.copy(local);
                 this.dice.add(dot);
             });
         });
@@ -211,7 +238,7 @@ class Game {
         // Obtener elementos del DOM
         const diceResultElement = document.getElementById('diceResult');
         const diceButton = document.getElementById('diceButton');
-        
+
         // Deshabilitar el botón mientras el dado gira
         diceButton.disabled = true;
         diceButton.style.opacity = '0.5';
@@ -219,23 +246,24 @@ class Game {
 
         // Generar un número aleatorio (1-6)
         const randomNumber = Math.floor(Math.random() * 6) + 1;
-        
-        // Configurar las rotaciones finales para que el dado quede derecho
+
+        // Configurar las rotaciones finales para que la cara correspondiente quede hacia arriba (+Y)
         const finalRotations = {
-            1: { x: 0, y: 0, z: 0 },               // Frente
-            2: { x: Math.PI, y: 0, z: 0 },         // Atrás
-            3: { x: -Math.PI/2, y: 0, z: 0 },      // Arriba
-            4: { x: Math.PI/2, y: 0, z: 0 },       // Abajo
-            5: { x: 0, y: -Math.PI/2, z: 0 },      // Izquierda
-            6: { x: 0, y: Math.PI/2, z: 0 }        // Derecha
+            1: { x: 0, y: 0, z: 0 },                // +Y -> cara superior
+            6: { x: Math.PI, y: 0, z: 0 },                // -Y -> boca abajo
+            2: { x: -Math.PI / 2, y: 0, z: 0 },                // +Z -> rotar -90° en X para poner +Z arriba
+            5: { x: Math.PI / 2, y: 0, z: 0 },                // -Z -> rotar +90° en X
+            3: { x: 0, y: 0, z: Math.PI / 2 },       // +X -> rotar +90° en Z
+            4: { x: 0, y: 0, z: -Math.PI / 2 }       // -X -> rotar -90° en Z
         };
 
-        // Configurar giros completos antes de la posición final
+
         const spins = {
             x: Math.PI * 4 * (1 + Math.random()),
             y: Math.PI * 4 * (1 + Math.random()),
-            z: 0  // No girar en Z para mantener el dado derecho
+            z: Math.PI * 2 * Math.random()  // permitir giros en Z también
         };
+
 
         const targetRotation = {
             x: finalRotations[randomNumber].x + spins.x,
@@ -260,11 +288,11 @@ class Game {
 
             // Función de ease-out personalizada para un movimiento más natural
             const easeProgress = 1 - Math.pow(1 - progress, 4);
-            
+
             // Animación de rotación
             this.dice.rotation.x = startRotation.x + (targetRotation.x - startRotation.x) * easeProgress;
             this.dice.rotation.y = startRotation.y + (targetRotation.y - startRotation.y) * easeProgress;
-            
+
             // Animación de salto parabólico
             const jumpProgress = Math.sin(progress * Math.PI);
             this.dice.position.y = startHeight + jumpHeight * jumpProgress;
@@ -280,7 +308,7 @@ class Game {
                 );
                 this.dice.position.y = startHeight;
                 this.isRolling = false;
-                
+
                 // Mostrar el resultado
                 diceResultElement.textContent = `¡Sacaste un ${randomNumber}!`;
                 diceResultElement.style.opacity = '1';
@@ -329,7 +357,7 @@ class Game {
 
         // Definir el camino del juego (solo el perímetro)
         this.path = [];
-        
+
         // Añadir borde superior
         for (let x = 0; x < this.boardSize.width; x++) {
             this.path.push([x, 0]);
@@ -373,7 +401,7 @@ class Game {
                 }
             }
         }
-        
+
         // Agregar elementos decorativos
         this.addDecorativeElements();
     }
@@ -412,7 +440,7 @@ class Game {
 
     createChocolate(x, z) {
         const chocolateGeometry = new THREE.BoxGeometry(0.4, 0.1, 0.6);
-        const chocolateMaterial = new THREE.MeshStandardMaterial({ 
+        const chocolateMaterial = new THREE.MeshStandardMaterial({
             color: 0x3C1C17,
             roughness: 0.3
         });
@@ -435,7 +463,7 @@ class Game {
 
     createCoffeeBean(x, z) {
         const beanGeometry = new THREE.SphereGeometry(0.15, 8, 8);
-        const beanMaterial = new THREE.MeshStandardMaterial({ 
+        const beanMaterial = new THREE.MeshStandardMaterial({
             color: 0x3C1C17,
             roughness: 0.7
         });
@@ -460,8 +488,8 @@ class Game {
 
         // Agregar palmeras en las esquinas del camino
         const palmTrees = [
-            [0, 0], [this.boardSize.width-1, 0], 
-            [0, this.boardSize.height-1], [this.boardSize.width-1, this.boardSize.height-1]
+            [0, 0], [this.boardSize.width - 1, 0],
+            [0, this.boardSize.height - 1], [this.boardSize.width - 1, this.boardSize.height - 1]
         ];
         palmTrees.forEach(([x, z]) => {
             const worldX = startX + x;
@@ -482,7 +510,7 @@ class Game {
             }
         });
     }
-    
+
 
     animate() {
         requestAnimationFrame(() => this.animate());
@@ -527,11 +555,6 @@ class Game {
         });
     }
 }
-
-// Iniciar el juego cuando el DOM esté listo
-document.addEventListener('DOMContentLoaded', () => {
-    new Game();
-});
 
 // Iniciar el juego cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
